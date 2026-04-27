@@ -10,6 +10,9 @@ The **AI Inbox Triage Assistant** is a Streamlit application that helps a human 
 
 Instead of acting like a general chatbot, this project uses a multi-step AI workflow. The app takes a message, classifies it, retrieves related knowledge base documents, generates a grounded draft reply, checks the result for safety and quality, and flags cases that need human review.
 
+## Demo Video
+https://www.loom.com/share/cfc3ff0b082b43cfa0ee14e127714065
+
 ## Features
 
 - Classifies messages into event, schedule, refund, technical, general, complaint, ambiguous, spam, phishing, and malicious-request categories.
