@@ -183,7 +183,7 @@ What worked well was retrieval. When the app retrieved the right policy snippets
 
 ## Reflection and Ethics
 
-For my final project, I built an AI Inbox Triage Assistant for a CodePath course. The system takes an incoming support-style message, classifies it, estimates urgency, retrieves relevant policy information from a local knowledge base, drafts a response, checks the response for quality and safety, and logs the result for review. While the project works well as a demo, building it also made me think more carefully about the limitations, possible misuse, and reliability issues that come with AI systems.
+For my final project, I built an AI Inbox Triage Assistant. The system takes an incoming support-style message, classifies it, estimates urgency, retrieves relevant policy information from a local knowledge base, drafts a response, checks the response for quality and safety, and logs the result for review. While the project works well as a demo, building it also made me think more carefully about the limitations, possible misuse, and reliability issues that come with AI systems.
 
 ### Limitations and Biases
 
