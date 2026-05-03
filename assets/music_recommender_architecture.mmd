@@ -1,11 +1,13 @@
 flowchart LR
     A["User request or sample query"] --> B["Input guardrails"]
     B --> C["Profile parser"]
-    C --> D["TF-IDF retriever"]
+    C --> N["Optional OpenAI LLM refinement"]
+    N --> D["TF-IDF retriever"]
     D --> E["Context builder"]
     E --> F["Scoring engine"]
     F --> G["Diversity reranker"]
-    G --> H["Self-check and confidence scoring"]
+    G --> O["Optional OpenAI LLM explanations"]
+    O --> H["Self-check and confidence scoring"]
     H --> I["Streamlit UI / CLI output"]
     H --> J["JSONL run log"]
     K["Evaluation cases"] --> B

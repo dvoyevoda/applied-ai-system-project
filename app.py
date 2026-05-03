@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
 from src.orchestrator import MusicRecommendationAgent
 from src.recommender import load_songs, unique_labels
@@ -24,19 +26,13 @@ def load_catalog() -> list[dict]:
     return load_songs(str(DATA_DIR / "songs.csv"))
 
 
-@st.cache_resource
-def build_agent() -> MusicRecommendationAgent:
-    return MusicRecommendationAgent(
-        song_path=DATA_DIR / "songs.csv",
-        knowledge_path=DATA_DIR / "music_knowledge.json",
-        log_path=ROOT / "logs" / "recommendation_runs.jsonl",
-    )
-
-
 def main() -> None:
+    load_dotenv()
     st.set_page_config(page_title="MoodMap Music Recommender", layout="wide")
     st.title("MoodMap Music Recommender")
-    st.caption("A Module 3 music recommender upgraded with retrieval, guardrails, confidence scoring, and evaluation.")
+    st.caption(
+        "A Module 3 music recommender upgraded with retrieval, an external LLM option, guardrails, confidence scoring, and evaluation."
+    )
 
     songs = load_catalog()
     genres = ["Auto"] + unique_labels(songs, "genre")
@@ -44,6 +40,23 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Controls")
+        st.subheader("External LLM")
+        env_key = os.getenv("OPENAI_API_KEY", "")
+        api_key = st.text_input(
+            "OpenAI API key",
+            value="",
+            type="password",
+            help="Optional. If provided, the app uses OpenAI for profile refinement and grounded explanations.",
+        )
+        if not api_key and env_key:
+            api_key = env_key
+            st.success("Using OPENAI_API_KEY from environment.")
+        model = st.text_input("OpenAI model", value=os.getenv("OPENAI_MODEL", "gpt-5-mini"))
+        use_llm = st.checkbox("Use external LLM", value=bool(api_key))
+        if use_llm and not api_key:
+            st.warning("Add an API key to use the LLM path. The app will fall back locally.")
+        st.divider()
+        st.subheader("Recommendation Controls")
         count = st.slider("Recommendations", min_value=3, max_value=8, value=5)
         diversity = st.slider("Diversity", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
         selected_genre = st.selectbox("Genre override", genres)
@@ -89,8 +102,15 @@ def main() -> None:
     if use_acoustic:
         explicit_preferences["likes_acoustic"] = likes_acoustic
 
-    agent = build_agent()
-    with st.spinner("Planning, retrieving context, scoring songs, and checking reliability..."):
+    agent = MusicRecommendationAgent(
+        song_path=DATA_DIR / "songs.csv",
+        knowledge_path=DATA_DIR / "music_knowledge.json",
+        log_path=ROOT / "logs" / "recommendation_runs.jsonl",
+        use_llm=use_llm,
+        api_key=api_key,
+        model=model,
+    )
+    with st.spinner("Planning, optionally calling the LLM, retrieving context, scoring songs, and checking reliability..."):
         result = agent.run(query, k=count, explicit_preferences=explicit_preferences)
 
     render_result(result.to_dict())
@@ -106,9 +126,11 @@ def render_result(result: dict) -> None:
     metric_cols = st.columns(4)
     metric_cols[0].metric("Activity", profile["activity"])
     metric_cols[1].metric("Confidence", f"{result['overall_confidence']:.0%}")
-    metric_cols[2].metric("Human Review", "Yes" if self_check["needs_human_review"] else "No")
+    metric_cols[2].metric("LLM Used", "Yes" if result["llm_used"] else "No")
     metric_cols[3].metric("Retrieved Docs", len(docs))
 
+    if result["llm_enabled"] and result["llm_error"]:
+        st.warning("LLM fallback: " + result["llm_error"])
     if result["guardrail_flags"]:
         st.warning("Guardrail flags: " + ", ".join(result["guardrail_flags"]))
     if self_check["issues"]:
@@ -135,6 +157,11 @@ def render_result(result: dict) -> None:
 
     with right:
         st.subheader("Agent Trace")
+        st.write(
+            f"**LLM mode**: {'enabled' if result['llm_enabled'] else 'disabled'}"
+            + (f" using `{result['llm_model']}`" if result["llm_model"] else "")
+        )
+        st.write(f"**Human Review**: {'Yes' if self_check['needs_human_review'] else 'No'}")
         for step in result["plan_steps"]:
             st.write(f"**{step['name']}**: {step['details']}")
 

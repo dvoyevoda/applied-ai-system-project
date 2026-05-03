@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .llm_client import LLMClientError, OpenAILLMClient
 from .guardrails import (
     overall_confidence,
     recommendation_confidence,
@@ -26,16 +27,32 @@ class MusicRecommendationAgent:
         song_path: str | Path = ROOT / "data" / "songs.csv",
         knowledge_path: str | Path = ROOT / "data" / "music_knowledge.json",
         log_path: str | Path | None = ROOT / "logs" / "recommendation_runs.jsonl",
+        use_llm: bool = False,
+        api_key: str | None = None,
+        model: str = "gpt-5-mini",
+        llm_client: Any | None = None,
     ):
         self.song_path = Path(song_path)
         self.knowledge_path = Path(knowledge_path)
+        self.use_llm = use_llm
+        self.llm_model = model if use_llm else None
+        self.llm_error: str | None = None
         self.songs = load_songs(str(self.song_path))
+        self.available_genres = unique_labels(self.songs, "genre")
+        self.available_moods = unique_labels(self.songs, "mood")
         self.parser = ProfileParser(
-            available_genres=unique_labels(self.songs, "genre"),
-            available_moods=unique_labels(self.songs, "mood"),
+            available_genres=self.available_genres,
+            available_moods=self.available_moods,
         )
         self.retriever = MusicRetriever(self.songs, self.knowledge_path)
         self.logger = RunLogger(log_path)
+        self.llm_client = llm_client
+        if self.use_llm and self.llm_client is None:
+            try:
+                self.llm_client = OpenAILLMClient(api_key=api_key or "", model=model)
+            except LLMClientError as exc:
+                self.llm_error = str(exc)
+                self.llm_client = None
 
     def run(
         self,
@@ -55,7 +72,44 @@ class MusicRecommendationAgent:
             )
         )
 
+        llm_used = False
         parse_result = self.parser.parse(sanitized_query, explicit_preferences=explicit_preferences)
+        if self.use_llm and self.llm_client is not None:
+            try:
+                parse_result = self.llm_client.refine_profile(
+                    query=sanitized_query,
+                    local_parse=parse_result,
+                    available_genres=self.available_genres,
+                    available_moods=self.available_moods,
+                )
+                llm_used = True
+                plan_steps.append(
+                    PlanStep(
+                        name="External LLM profile refinement",
+                        status="complete",
+                        details=f"Used {self.llm_model} to refine the user taste profile.",
+                    )
+                )
+            except LLMClientError as exc:
+                self.llm_error = str(exc)
+                flags.append("llm_profile_fallback")
+                plan_steps.append(
+                    PlanStep(
+                        name="External LLM profile refinement",
+                        status="fallback",
+                        details=f"LLM profile step failed, so the local parser was used: {exc}",
+                    )
+                )
+        elif self.use_llm:
+            flags.append("llm_unavailable")
+            plan_steps.append(
+                PlanStep(
+                    name="External LLM profile refinement",
+                    status="fallback",
+                    details=self.llm_error or "LLM was requested but no usable client was available.",
+                )
+            )
+
         profile = validate_profile(parse_result.profile)
         flags.extend(f"missing_{field}" for field in parse_result.missing_fields)
         plan_steps.append(
@@ -114,6 +168,35 @@ class MusicRecommendationAgent:
                 )
             )
 
+        if self.use_llm and self.llm_client is not None and recommendations:
+            try:
+                llm_explanations = self.llm_client.narrate_recommendations(
+                    query=sanitized_query,
+                    profile=profile,
+                    documents=documents,
+                    recommendations=recommendations,
+                )
+                for rec, llm_explanation in zip(recommendations, llm_explanations):
+                    rec.explanation = f"{llm_explanation} Deterministic evidence: {rec.explanation}"
+                llm_used = True
+                plan_steps.append(
+                    PlanStep(
+                        name="External LLM explanation generation",
+                        status="complete",
+                        details=f"Used {self.llm_model} to generate grounded recommendation explanations.",
+                    )
+                )
+            except LLMClientError as exc:
+                self.llm_error = str(exc)
+                flags.append("llm_explanation_fallback")
+                plan_steps.append(
+                    PlanStep(
+                        name="External LLM explanation generation",
+                        status="fallback",
+                        details=f"LLM explanation step failed, so deterministic explanations were kept: {exc}",
+                    )
+                )
+
         confidence = overall_confidence(
             recommendations=recommendations,
             parse_confidence=parse_result.confidence,
@@ -143,6 +226,10 @@ class MusicRecommendationAgent:
             sanitized_query=sanitized_query,
             profile=profile,
             parse_confidence=parse_result.confidence,
+            llm_enabled=self.use_llm,
+            llm_used=llm_used,
+            llm_model=self.llm_model,
+            llm_error=self.llm_error,
             retrieved_documents=documents,
             recommendations=recommendations,
             overall_confidence=confidence,

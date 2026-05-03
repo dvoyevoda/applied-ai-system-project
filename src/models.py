@@ -119,6 +119,10 @@ class RecommendationResult:
     sanitized_query: str
     profile: UserProfile
     parse_confidence: float
+    llm_enabled: bool
+    llm_used: bool
+    llm_model: Optional[str]
+    llm_error: Optional[str]
     retrieved_documents: List[RetrievedDocument]
     recommendations: List[Recommendation]
     overall_confidence: float
@@ -132,6 +136,10 @@ class RecommendationResult:
             "sanitized_query": self.sanitized_query,
             "profile": self.profile.to_dict(),
             "parse_confidence": self.parse_confidence,
+            "llm_enabled": self.llm_enabled,
+            "llm_used": self.llm_used,
+            "llm_model": self.llm_model,
+            "llm_error": self.llm_error,
             "retrieved_documents": [doc.to_dict() for doc in self.retrieved_documents],
             "recommendations": [rec.to_dict() for rec in self.recommendations],
             "overall_confidence": self.overall_confidence,

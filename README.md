@@ -16,7 +16,8 @@ Original Module 3 scope:
 Final project extensions:
 
 - **Retrieval-augmented recommendation:** The system retrieves activity and mood guides from `data/music_knowledge.json` and uses those retrieved documents to change song scores.
-- **Agentic workflow:** `MusicRecommendationAgent` runs observable steps: guardrails, profile parsing, retrieval, context building, scoring, diversity reranking, self-checking, and logging.
+- **External LLM integration:** When an OpenAI API key is provided, the app uses the OpenAI Responses API for taste-profile refinement and grounded recommendation explanations.
+- **Agentic workflow:** `MusicRecommendationAgent` runs observable steps: guardrails, optional LLM profile refinement, retrieval, context building, scoring, diversity reranking, optional LLM explanation generation, self-checking, and logging.
 - **Reliability layer:** The system detects vague prompts, prompt-injection style text, missing preferences, low confidence, and sensitive wellbeing language.
 - **Evaluation harness:** `eval/evaluate.py` runs predefined test cases and reports pass/fail checks for top-match quality, confidence thresholds, retrieval, and guardrail behavior.
 - **Interactive UI:** `app.py` provides a Streamlit app for trying requests, inspecting the agent trace, reviewing retrieved evidence, and downloading structured JSON.
@@ -27,11 +28,13 @@ Final project extensions:
 flowchart LR
     A["User request or sample query"] --> B["Input guardrails"]
     B --> C["Profile parser"]
-    C --> D["TF-IDF retriever"]
+    C --> N["Optional OpenAI LLM refinement"]
+    N --> D["TF-IDF retriever"]
     D --> E["Context builder"]
     E --> F["Scoring engine"]
     F --> G["Diversity reranker"]
-    G --> H["Self-check and confidence scoring"]
+    G --> O["Optional OpenAI LLM explanations"]
+    O --> H["Self-check and confidence scoring"]
     H --> I["Streamlit UI / CLI output"]
     H --> J["JSONL run log"]
     K["Evaluation cases"] --> B
@@ -48,6 +51,7 @@ Main files:
 - `app.py`: Streamlit user interface.
 - `src/main.py`: Command-line runner.
 - `src/orchestrator.py`: End-to-end agent workflow.
+- `src/llm_client.py`: Optional OpenAI Responses API client.
 - `src/profile_parser.py`: Natural-language request to taste profile parser.
 - `src/retriever.py`: TF-IDF retrieval over song documents and custom music guides.
 - `src/recommender.py`: Original scoring logic plus retrieval boosts and diversity reranking.
@@ -73,6 +77,15 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+To enable the external LLM path, set an OpenAI API key:
+
+```bash
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY
+```
+
+Or paste the key into the Streamlit sidebar. Without a key, the app falls back to the local parser and deterministic explanations so it still runs for graders.
+
 Run the Streamlit app:
 
 ```bash
@@ -83,6 +96,12 @@ Run the command-line demo:
 
 ```bash
 python -m src.main "I need calm focus music for coding with lofi and acoustic texture."
+```
+
+Run the command-line demo with the external LLM:
+
+```bash
+python -m src.main --use-llm "I need calm focus music for coding with lofi and acoustic texture."
 ```
 
 Run the tests:
@@ -110,6 +129,7 @@ I need calm focus music for coding with lofi and acoustic texture.
 Output summary:
 
 - Parsed profile: `study`, genre `lofi`, mood `focused`, low energy, acoustic preference.
+- If LLM mode is enabled, the model can refine the parsed profile before retrieval.
 - Retrieved evidence: study/focus guide plus matching song documents.
 - Top recommendation: `Focus Flow` by LoRoom.
 - Confidence: `97%`.
@@ -163,7 +183,7 @@ The evaluation cases include study, workout, wind-down, party, heartbreak, commu
 
 I kept the original scoring system because it is transparent and easy to debug. Instead of replacing it with a black-box model, I added retrieval and context boosts around it. This makes the new AI behavior visible: if the study guide is retrieved, lofi, ambient, classical, focused, chill, and peaceful songs receive extra support.
 
-I used TF-IDF retrieval because it is lightweight, reproducible, and works without an API key. A vector database or LLM could make the system more flexible, but for this course project the simpler retriever is easier to install, test, and explain.
+I used TF-IDF retrieval because it is lightweight and reproducible, then added the external LLM as an optional integrated step instead of making the whole app depend on an API key. This gives the project real LLM behavior when a key is available while preserving a reliable fallback for testing and grading.
 
 I added a diversity reranker so the output does not become five near-duplicate songs. The strongest match stays first, but later recommendations can include adjacent genres when their scores are still strong enough.
 
