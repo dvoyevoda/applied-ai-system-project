@@ -19,7 +19,22 @@ DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 
 @st.cache_data
 def load_samples() -> pd.DataFrame:
-    return pd.read_csv(DATA_DIR / "sample_queries.csv")
+    samples = pd.read_csv(DATA_DIR / "sample_queries.csv", dtype=str, keep_default_na=False)
+    required_columns = ["section", "label", "query"]
+    if not set(required_columns).issubset(samples.columns):
+        return pd.DataFrame(columns=required_columns)
+    samples = samples[required_columns].copy()
+    for column in required_columns:
+        samples[column] = samples[column].fillna("").astype(str).str.strip()
+    samples = samples[
+        (samples["section"] != "")
+        & (samples["label"] != "")
+        & (samples["query"] != "")
+        & (samples["section"].str.lower() != "nan")
+        & (samples["label"].str.lower() != "nan")
+        & (samples["query"].str.lower() != "nan")
+    ]
+    return samples.reset_index(drop=True)
 
 
 @st.cache_data
@@ -42,14 +57,64 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Controls")
-        count = st.slider("Recommendations", min_value=3, max_value=8, value=5)
-        diversity = st.slider("Diversity", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
-        selected_genre = st.selectbox("Genre override", genres)
-        selected_mood = st.selectbox("Mood override", moods)
-        target_energy = st.slider("Energy override", min_value=0.0, max_value=1.0, value=0.50, step=0.05)
-        use_energy = st.checkbox("Use energy override", value=False)
-        likes_acoustic = st.checkbox("Prefer acoustic texture", value=False)
-        use_acoustic = st.checkbox("Use acoustic override", value=False)
+        with st.expander("What these controls do", expanded=True):
+            st.write("**Recommendations**: how many songs to return.")
+            st.write("**Diversity**: how strongly the app avoids returning near-duplicate genres or moods.")
+            st.write("**Genre override**: force the taste profile to prefer one catalog genre instead of auto-detecting it.")
+            st.write("**Mood override**: force the taste profile to prefer one catalog mood instead of auto-detecting it.")
+            st.write("**Energy override**: choose a target energy from 0.0 calm to 1.0 intense.")
+            st.write("**Use energy override**: applies the energy slider to the recommendation profile.")
+            st.write("**Prefer acoustic texture**: chooses whether the acoustic override should prefer acoustic songs.")
+            st.write("**Use acoustic override**: applies the acoustic preference instead of auto-detecting it.")
+
+        count = st.slider(
+            "Recommendations",
+            min_value=3,
+            max_value=8,
+            value=5,
+            help="How many songs the app should return in the final ranked list.",
+        )
+        diversity = st.slider(
+            "Diversity",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.25,
+            step=0.05,
+            help="Higher values encourage more variety across genres and moods after the best match.",
+        )
+        selected_genre = st.selectbox(
+            "Genre override",
+            genres,
+            help="Use Auto to let the parser or LLM infer the genre, or choose a genre to force it.",
+        )
+        selected_mood = st.selectbox(
+            "Mood override",
+            moods,
+            help="Use Auto to infer the mood from the prompt, or choose a mood to force it.",
+        )
+        target_energy = st.slider(
+            "Energy override",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.50,
+            step=0.05,
+            help="Target song energy: 0.0 is calm/quiet, 1.0 is intense/high-energy.",
+        )
+        use_energy = st.checkbox(
+            "Use energy override",
+            value=False,
+            help="Turn this on to make the energy slider override the parsed energy target.",
+        )
+        likes_acoustic = st.checkbox(
+            "Prefer acoustic texture",
+            value=False,
+            help="When acoustic override is active, this chooses acoustic vs less-acoustic songs.",
+        )
+        use_acoustic = st.checkbox(
+            "Use acoustic override",
+            value=False,
+            help="Turn this on to apply the acoustic preference instead of auto-detecting it.",
+        )
 
     samples = load_samples()
     left, right = st.columns([0.45, 0.55])
