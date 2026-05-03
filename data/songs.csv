@@ -1,0 +1,29 @@
+id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness
+1,Sunrise City,Neon Echo,pop,happy,0.82,118,0.84,0.79,0.18
+2,Midnight Coding,LoRoom,lofi,chill,0.42,78,0.56,0.62,0.71
+3,Storm Runner,Voltline,rock,intense,0.91,152,0.48,0.66,0.10
+4,Library Rain,Paper Lanterns,lofi,chill,0.35,72,0.60,0.58,0.86
+5,Gym Hero,Max Pulse,pop,intense,0.93,132,0.77,0.88,0.05
+6,Spacewalk Thoughts,Orbit Bloom,ambient,chill,0.28,60,0.65,0.41,0.92
+7,Coffee Shop Stories,Slow Stereo,jazz,relaxed,0.37,90,0.71,0.54,0.89
+8,Night Drive Loop,Neon Echo,synthwave,moody,0.75,110,0.49,0.73,0.22
+9,Focus Flow,LoRoom,lofi,focused,0.40,80,0.59,0.60,0.78
+10,Rooftop Lights,Indigo Parade,indie pop,happy,0.76,124,0.81,0.82,0.35
+11,City Cipher,North Verse,hip hop,confident,0.74,96,0.62,0.83,0.12
+12,Moonlit Sonata,Aria Vale,classical,peaceful,0.18,64,0.57,0.24,0.97
+13,Iron Horizon,Rust Crown,metal,aggressive,0.95,168,0.41,0.52,0.03
+14,Dusty Highway,Willow Creek,country,nostalgic,0.46,102,0.68,0.59,0.64
+15,Island Sunrise,Coral Drift,reggae,carefree,0.58,88,0.79,0.72,0.49
+16,Neon Skyline,Pulse Avenue,house,euphoric,0.86,126,0.74,0.89,0.08
+17,Subway Echoes,Concrete Poets,boom bap,gritty,0.67,92,0.45,0.71,0.19
+18,Winter Letters,Maple Thread,folk,melancholic,0.31,76,0.38,0.44,0.91
+19,Blue Smoke Room,Delta Lantern,blues,soulful,0.43,84,0.52,0.49,0.83
+20,Rio Nights,Sol de Rua,latin,festive,0.81,128,0.88,0.91,0.16
+21,Star Arena,Luna Prism,k-pop,playful,0.88,132,0.86,0.93,0.11
+22,Golden Market,Kofi Tide,afrobeat,uplifting,0.79,116,0.82,0.87,0.21
+23,Garage Sparks,Static Youth,punk,rebellious,0.90,176,0.55,0.69,0.07
+24,Velvet Promise,Nora Hale,r&b,romantic,0.52,94,0.73,0.77,0.35
+25,Afterglow Run,Skyline Method,drum and bass,driven,0.94,172,0.67,0.86,0.04
+26,Sand and Strings,Camino Rojo,flamenco,passionate,0.63,120,0.72,0.74,0.42
+27,Sunday Choir,Grace Harbor,gospel,hopeful,0.57,100,0.89,0.66,0.58
+28,Final Credits,Orion Frame,cinematic,triumphant,0.69,108,0.76,0.55,0.47

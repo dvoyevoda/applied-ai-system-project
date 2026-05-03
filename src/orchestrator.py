@@ -1,63 +1,157 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from .checker import OutputChecker
-from .classifier import MessageClassifier
-from .generator import ResponseGenerator
-from .logger import TriageLogger
-from .models import TriageResult
-from .retriever import KnowledgeRetriever
+from .guardrails import (
+    overall_confidence,
+    recommendation_confidence,
+    self_check,
+    validate_profile,
+    validate_query,
+)
+from .logger import RunLogger
+from .models import PlanStep, Recommendation, RecommendationResult, Song
+from .profile_parser import ProfileParser
+from .recommender import diversify_ranked, load_songs, rank_songs, unique_labels
+from .retriever import MusicRetriever
 
 
-class InboxTriageOrchestrator:
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class MusicRecommendationAgent:
     def __init__(
         self,
-        *,
-        api_key: str | None = None,
-        model: str = "gpt-5.4-mini",
-        knowledge_path: str | Path = "data/faq.json",
-        log_path: str | Path = "logs/app_logs.csv",
+        song_path: str | Path = ROOT / "data" / "songs.csv",
+        knowledge_path: str | Path = ROOT / "data" / "music_knowledge.json",
+        log_path: str | Path | None = ROOT / "logs" / "recommendation_runs.jsonl",
     ):
-        self.api_key = (api_key or "").strip()
-        self.model = model.strip() or "gpt-5.4-mini"
-        self.classifier = MessageClassifier(api_key=self.api_key, model=self.model)
-        self.retriever = KnowledgeRetriever(knowledge_path=knowledge_path)
-        self.generator = ResponseGenerator(api_key=self.api_key, model=self.model)
-        self.checker = OutputChecker(api_key=self.api_key, model=self.model)
-        self.logger = TriageLogger(log_path=log_path)
+        self.song_path = Path(song_path)
+        self.knowledge_path = Path(knowledge_path)
+        self.songs = load_songs(str(self.song_path))
+        self.parser = ProfileParser(
+            available_genres=unique_labels(self.songs, "genre"),
+            available_moods=unique_labels(self.songs, "mood"),
+        )
+        self.retriever = MusicRetriever(self.songs, self.knowledge_path)
+        self.logger = RunLogger(log_path)
 
-    def run(self, message: str, *, log: bool = True) -> TriageResult:
-        clean_message = message.strip()
-        if not clean_message:
-            raise ValueError("Message cannot be empty.")
+    def run(
+        self,
+        query: str,
+        k: int = 5,
+        explicit_preferences: Optional[Dict[str, Any]] = None,
+        should_log: bool = True,
+    ) -> RecommendationResult:
+        plan_steps: List[PlanStep] = []
 
-        classification = self.classifier.classify(clean_message)
-        query = f"{clean_message} {classification.summary} {classification.category}"
-        retrieved_documents = (
-            self.retriever.search(query, category=classification.category, top_k=3)
-            if classification.retrieval_needed
-            else []
+        sanitized_query, flags = validate_query(query)
+        plan_steps.append(
+            PlanStep(
+                name="Input guardrails",
+                status="complete",
+                details=f"Validated request and found {len(flags)} flag(s): {', '.join(flags) or 'none'}.",
+            )
         )
-        draft = self.generator.generate(
-            message=clean_message,
-            classification=classification,
-            retrieved_documents=retrieved_documents,
+
+        parse_result = self.parser.parse(sanitized_query, explicit_preferences=explicit_preferences)
+        profile = validate_profile(parse_result.profile)
+        flags.extend(f"missing_{field}" for field in parse_result.missing_fields)
+        plan_steps.append(
+            PlanStep(
+                name="Profile parser",
+                status="complete",
+                details=(
+                    f"Built a {profile.activity} profile with genre={profile.favorite_genre}, "
+                    f"mood={profile.favorite_mood}, energy={profile.target_energy:.2f}."
+                ),
+            )
         )
-        check = self.checker.check(
-            message=clean_message,
-            classification=classification,
-            retrieved_documents=retrieved_documents,
-            draft=draft,
+
+        documents = self.retriever.retrieve(sanitized_query, profile, limit=8)
+        context = self.retriever.build_context(documents)
+        knowledge_count = sum(1 for doc in documents if doc.kind == "knowledge")
+        song_context_count = sum(1 for doc in documents if doc.kind == "song")
+        retrieval_coverage = min(1.0, 0.25 + 0.18 * knowledge_count + 0.08 * song_context_count)
+        plan_steps.append(
+            PlanStep(
+                name="Retriever",
+                status="complete",
+                details=f"Retrieved {knowledge_count} guide document(s) and {song_context_count} song match(es).",
+            )
         )
-        result = TriageResult(
-            message=clean_message,
-            classification=classification,
-            retrieved_documents=retrieved_documents,
-            draft=draft,
-            check=check,
-            model_used=self.model if self.api_key else "local-fallback",
+
+        ranked = rank_songs(profile, self.songs, context=context)
+        pool_size = max(k * 3, k)
+        diversified = diversify_ranked(ranked[:pool_size], k=k, diversity_strength=profile.diversity)
+        plan_steps.append(
+            PlanStep(
+                name="Scoring and reranking",
+                status="complete",
+                details="Scored songs with the original Module 3 formula plus retrieved context and diversity reranking.",
+            )
         )
-        if log:
+
+        top_score = diversified[0][1] if diversified else 0.0
+        evidence_titles = context.get("evidence_titles", [])[:4]
+        recommendations: List[Recommendation] = []
+        for song_data, score, reasons in diversified:
+            rec_confidence = recommendation_confidence(
+                score=score,
+                top_score=top_score,
+                parse_confidence=parse_result.confidence,
+                retrieval_coverage=retrieval_coverage,
+            )
+            recommendations.append(
+                Recommendation(
+                    song=Song.from_dict(song_data),
+                    score=round(score, 3),
+                    confidence=rec_confidence,
+                    explanation="; ".join(reasons),
+                    evidence=evidence_titles,
+                    guardrail_notes=list(flags),
+                )
+            )
+
+        confidence = overall_confidence(
+            recommendations=recommendations,
+            parse_confidence=parse_result.confidence,
+            retrieval_coverage=retrieval_coverage,
+            flags=flags,
+        )
+        check = self_check(
+            profile=profile,
+            documents=documents,
+            recommendations=recommendations,
+            flags=flags,
+            confidence=confidence,
+        )
+        plan_steps.append(
+            PlanStep(
+                name="Self-check",
+                status="complete",
+                details=(
+                    f"Confidence={confidence:.2f}; "
+                    f"human_review={'yes' if check['needs_human_review'] else 'no'}."
+                ),
+            )
+        )
+
+        result = RecommendationResult(
+            query=query,
+            sanitized_query=sanitized_query,
+            profile=profile,
+            parse_confidence=parse_result.confidence,
+            retrieved_documents=documents,
+            recommendations=recommendations,
+            overall_confidence=confidence,
+            guardrail_flags=sorted(set(flags)),
+            plan_steps=plan_steps,
+            self_check=check,
+        )
+
+        if should_log:
             self.logger.log(result)
+
         return result

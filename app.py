@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
 
-from src.orchestrator import InboxTriageOrchestrator
+from src.orchestrator import MusicRecommendationAgent
+from src.recommender import load_songs, unique_labels
 
 
 ROOT = Path(__file__).parent
@@ -17,123 +16,140 @@ DATA_DIR = ROOT / "data"
 
 @st.cache_data
 def load_samples() -> pd.DataFrame:
-    sample_path = DATA_DIR / "sample_messages.csv"
-    if sample_path.exists():
-        samples = pd.read_csv(sample_path)
-        if "section" not in samples.columns:
-            samples.insert(0, "section", "Real Requests")
-        return samples
-    return pd.DataFrame(columns=["section", "label", "message"])
+    return pd.read_csv(DATA_DIR / "sample_queries.csv")
+
+
+@st.cache_data
+def load_catalog() -> list[dict]:
+    return load_songs(str(DATA_DIR / "songs.csv"))
+
+
+@st.cache_resource
+def build_agent() -> MusicRecommendationAgent:
+    return MusicRecommendationAgent(
+        song_path=DATA_DIR / "songs.csv",
+        knowledge_path=DATA_DIR / "music_knowledge.json",
+        log_path=ROOT / "logs" / "recommendation_runs.jsonl",
+    )
 
 
 def main() -> None:
-    load_dotenv()
-    st.set_page_config(page_title="AI Inbox Triage Assistant", layout="wide")
+    st.set_page_config(page_title="MoodMap Music Recommender", layout="wide")
+    st.title("MoodMap Music Recommender")
+    st.caption("A Module 3 music recommender upgraded with retrieval, guardrails, confidence scoring, and evaluation.")
 
-    st.title("AI Inbox Triage Assistant")
-    st.caption("Classify incoming messages, retrieve policy context, draft a response, and flag cases for human review.")
+    songs = load_catalog()
+    genres = ["Auto"] + unique_labels(songs, "genre")
+    moods = ["Auto"] + unique_labels(songs, "mood")
 
     with st.sidebar:
-        st.header("AI Settings")
-        api_key = st.text_input(
-            "OpenAI API key",
-            value="",
-            type="password",
-            help="Paste your key here for testing. It is only used for this session and is not written to logs.",
-        )
-        env_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key and env_key:
-            api_key = env_key
-            st.success("Using OPENAI_API_KEY from environment.")
-        model = st.text_input("OpenAI model", value=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"))
-        st.divider()
-        st.write("Without an API key, the app uses a deterministic local fallback so the workflow still runs.")
+        st.header("Controls")
+        count = st.slider("Recommendations", min_value=3, max_value=8, value=5)
+        diversity = st.slider("Diversity", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
+        selected_genre = st.selectbox("Genre override", genres)
+        selected_mood = st.selectbox("Mood override", moods)
+        target_energy = st.slider("Energy override", min_value=0.0, max_value=1.0, value=0.50, step=0.05)
+        use_energy = st.checkbox("Use energy override", value=False)
+        likes_acoustic = st.checkbox("Prefer acoustic texture", value=False)
+        use_acoustic = st.checkbox("Use acoustic override", value=False)
 
-    st.subheader("Example Library")
     samples = load_samples()
-    sample_message = ""
-    if samples.empty:
-        st.info("No sample messages were found. Write your own message below.")
-    else:
-        example_sections = ["Write my own message"] + samples["section"].drop_duplicates().tolist()
-        selected_section = st.selectbox("Choose an example section", example_sections)
-        if selected_section != "Write my own message":
+    left, right = st.columns([0.45, 0.55])
+    with left:
+        st.subheader("Request")
+        sections = ["Write my own"] + samples["section"].drop_duplicates().tolist()
+        selected_section = st.selectbox("Example group", sections)
+        sample_query = ""
+        if selected_section != "Write my own":
             section_samples = samples[samples["section"] == selected_section]
-            selected_label = st.selectbox("Choose an example request", section_samples["label"].tolist())
-            sample_row = section_samples.loc[section_samples["label"] == selected_label].iloc[0]
-            sample_message = str(sample_row["message"])
-            st.caption(f"Loaded from: {selected_section} / {selected_label}")
+            label = st.selectbox("Example", section_samples["label"].tolist())
+            sample_query = str(section_samples.loc[section_samples["label"] == label].iloc[0]["query"])
 
-    message = st.text_area(
-        "Incoming message",
-        value=sample_message,
-        height=180,
-        placeholder="Paste a support-style message here...",
-    )
-
-    submitted = st.button("Analyze Message", type="primary")
-    if submitted:
-        if not message.strip():
-            st.error("Please enter a message to analyze.")
-            return
-
-        orchestrator = InboxTriageOrchestrator(
-            api_key=api_key,
-            model=model,
-            knowledge_path=DATA_DIR / "faq.json",
-            log_path=ROOT / "logs" / "app_logs.csv",
+        query = st.text_area(
+            "Music request",
+            value=sample_query,
+            height=170,
+            placeholder="Example: I need calm focus music for coding tonight.",
         )
-        with st.spinner("Running classifier, retriever, generator, and checker..."):
-            result = orchestrator.run(message)
-        render_result(result.to_dict())
+        submitted = st.button("Recommend", type="primary")
+
+    if not submitted:
+        with right:
+            st.subheader("Catalog")
+            st.dataframe(pd.DataFrame(songs), hide_index=True, use_container_width=True)
+        return
+
+    explicit_preferences = {"diversity": diversity}
+    if selected_genre != "Auto":
+        explicit_preferences["favorite_genre"] = selected_genre
+    if selected_mood != "Auto":
+        explicit_preferences["favorite_mood"] = selected_mood
+    if use_energy:
+        explicit_preferences["target_energy"] = target_energy
+    if use_acoustic:
+        explicit_preferences["likes_acoustic"] = likes_acoustic
+
+    agent = build_agent()
+    with st.spinner("Planning, retrieving context, scoring songs, and checking reliability..."):
+        result = agent.run(query, k=count, explicit_preferences=explicit_preferences)
+
+    render_result(result.to_dict())
 
 
 def render_result(result: dict) -> None:
-    classification = result["classification"]
-    draft = result["draft"]
-    check = result["check"]
+    profile = result["profile"]
+    self_check = result["self_check"]
+    recommendations = result["recommendations"]
     docs = result["retrieved_documents"]
 
-    st.success("Analysis complete. Result was logged for review.")
+    st.divider()
     metric_cols = st.columns(4)
-    metric_cols[0].metric("Category", classification["category"])
-    metric_cols[1].metric("Urgency", classification["urgency"])
-    metric_cols[2].metric("Confidence", f"{classification['confidence']:.0%}")
-    metric_cols[3].metric("Human Review", "Yes" if check["needs_human_review"] else "No")
+    metric_cols[0].metric("Activity", profile["activity"])
+    metric_cols[1].metric("Confidence", f"{result['overall_confidence']:.0%}")
+    metric_cols[2].metric("Human Review", "Yes" if self_check["needs_human_review"] else "No")
+    metric_cols[3].metric("Retrieved Docs", len(docs))
 
-    left, right = st.columns([1, 1])
+    if result["guardrail_flags"]:
+        st.warning("Guardrail flags: " + ", ".join(result["guardrail_flags"]))
+    if self_check["issues"]:
+        for issue in self_check["issues"]:
+            st.info(issue)
+
+    left, right = st.columns([0.58, 0.42])
     with left:
-        st.subheader("Summary")
-        st.write(draft["summary"])
-        st.subheader("Suggested Internal Action")
-        st.info(draft["suggested_action"])
-        st.subheader("Quality Check")
-        st.write(f"**Evidence coverage:** {check['evidence_coverage']}")
-        st.write(f"**Professionalism:** {check['professionalism']}")
-        st.write(f"**Review reason:** {check['review_reason']}")
-        if check["issues"]:
-            st.write("**Issues:**")
-            for issue in check["issues"]:
-                st.warning(issue)
+        st.subheader("Recommendations")
+        for index, rec in enumerate(recommendations, start=1):
+            song = rec["song"]
+            with st.expander(
+                f"{index}. {song['title']} - {song['artist']} "
+                f"({song['genre']}, {song['mood']})",
+                expanded=index <= 3,
+            ):
+                score_cols = st.columns(3)
+                score_cols[0].metric("Score", f"{rec['score']:.2f}")
+                score_cols[1].metric("Confidence", f"{rec['confidence']:.0%}")
+                score_cols[2].metric("Energy", f"{song['energy']:.2f}")
+                st.write(rec["explanation"])
+                if rec["evidence"]:
+                    st.caption("Evidence: " + " | ".join(rec["evidence"]))
 
     with right:
-        st.subheader("Draft Reply")
-        st.text_area("Editable draft", value=draft["draft_reply"], height=240)
-        st.subheader("Retrieved Knowledge")
-        if docs:
-            for doc in docs:
-                with st.expander(f"{doc['title']} ({doc['score']:.2f})"):
-                    st.write(doc["text"])
-                    st.caption(f"ID: {doc['id']} | Category: {doc['category']}")
-        else:
-            st.warning("No knowledge base records were retrieved.")
+        st.subheader("Agent Trace")
+        for step in result["plan_steps"]:
+            st.write(f"**{step['name']}**: {step['details']}")
 
-    with st.expander("Raw JSON result"):
-        st.json(result)
+        st.subheader("Parsed Profile")
+        st.json(profile)
+
+        st.subheader("Retrieved Context")
+        for doc in docs:
+            with st.expander(f"{doc['title']} ({doc['kind']}, {doc['score']:.2f})"):
+                st.write(doc["text"])
+
         st.download_button(
-            "Download result JSON",
+            "Download JSON",
             data=json.dumps(result, indent=2),
-            file_name="triage_result.json",
+            file_name="music_recommendation_result.json",
             mime="application/json",
         )
 

@@ -7,4 +7,6 @@ __pycache__/
 .pytest_cache/
 .streamlit/secrets.toml
 logs/*.csv
+logs/*.jsonl
 !logs/.gitkeep
+ai110-module3show-musicrecommendersimulation-starter/

@@ -1,117 +1,141 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 
-CATEGORIES = [
-    "Event Issue",
-    "Schedule Question",
-    "Refund Request",
-    "Technical Problem",
-    "General Information",
-    "Urgent Complaint",
-    "Ambiguous Request",
-    "Spam",
-    "Phishing Attempt",
-    "Malicious Request",
-]
-
-URGENCY_LEVELS = ["Low", "Medium", "High"]
-
-
-@dataclass(frozen=True)
-class KnowledgeItem:
-    id: str
+@dataclass
+class Song:
+    id: int
     title: str
-    category: str
-    text: str
-    tags: list[str] = field(default_factory=list)
+    artist: str
+    genre: str
+    mood: str
+    energy: float
+    tempo_bpm: float
+    valence: float
+    danceability: float
+    acousticness: float
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "KnowledgeItem":
+    def from_dict(cls, row: Dict[str, Any]) -> "Song":
         return cls(
-            id=str(data["id"]),
-            title=str(data["title"]),
-            category=str(data["category"]),
-            text=str(data["text"]),
-            tags=[str(tag) for tag in data.get("tags", [])],
+            id=int(row["id"]),
+            title=str(row["title"]),
+            artist=str(row["artist"]),
+            genre=str(row["genre"]),
+            mood=str(row["mood"]),
+            energy=float(row["energy"]),
+            tempo_bpm=float(row["tempo_bpm"]),
+            valence=float(row["valence"]),
+            danceability=float(row["danceability"]),
+            acousticness=float(row["acousticness"]),
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 @dataclass
-class ClassificationResult:
-    category: str
-    urgency: str
-    summary: str
-    retrieval_needed: bool = True
-    needs_escalation: bool = False
-    confidence: float = 0.0
-    rationale: str = ""
+class UserProfile:
+    favorite_genre: str
+    favorite_mood: str
+    target_energy: float
+    likes_acoustic: bool
+    activity: str = "general"
+    desired_valence: Optional[float] = None
+    target_danceability: Optional[float] = None
+    diversity: float = 0.25
+    novelty: float = 0.35
+    raw_query: str = ""
+    assumptions: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 @dataclass
-class RetrievedDocument:
-    item: KnowledgeItem
-    score: float
+class ProfileParseResult:
+    profile: UserProfile
+    confidence: float
+    assumptions: List[str]
+    missing_fields: List[str]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "id": self.item.id,
-            "title": self.item.title,
-            "category": self.item.category,
-            "text": self.item.text,
-            "tags": self.item.tags,
-            "score": round(float(self.score), 4),
+            "profile": self.profile.to_dict(),
+            "confidence": self.confidence,
+            "assumptions": list(self.assumptions),
+            "missing_fields": list(self.missing_fields),
         }
 
 
 @dataclass
-class DraftResponse:
-    summary: str
-    suggested_action: str
-    draft_reply: str
+class RetrievedDocument:
+    id: str
+    title: str
+    kind: str
+    text: str
+    score: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 @dataclass
-class CheckResult:
-    needs_human_review: bool
-    review_reason: str
-    evidence_coverage: str
-    professionalism: str
-    issues: list[str] = field(default_factory=list)
+class PlanStep:
+    name: str
+    status: str
+    details: str
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, str]:
         return asdict(self)
 
 
 @dataclass
-class TriageResult:
-    message: str
-    classification: ClassificationResult
-    retrieved_documents: list[RetrievedDocument]
-    draft: DraftResponse
-    check: CheckResult
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    model_used: str = "local-fallback"
+class Recommendation:
+    song: Song
+    score: float
+    confidence: float
+    explanation: str
+    evidence: List[str] = field(default_factory=list)
+    guardrail_notes: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "message": self.message,
-            "classification": self.classification.to_dict(),
+            "song": self.song.to_dict(),
+            "score": self.score,
+            "confidence": self.confidence,
+            "explanation": self.explanation,
+            "evidence": list(self.evidence),
+            "guardrail_notes": list(self.guardrail_notes),
+        }
+
+
+@dataclass
+class RecommendationResult:
+    query: str
+    sanitized_query: str
+    profile: UserProfile
+    parse_confidence: float
+    retrieved_documents: List[RetrievedDocument]
+    recommendations: List[Recommendation]
+    overall_confidence: float
+    guardrail_flags: List[str]
+    plan_steps: List[PlanStep]
+    self_check: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "query": self.query,
+            "sanitized_query": self.sanitized_query,
+            "profile": self.profile.to_dict(),
+            "parse_confidence": self.parse_confidence,
             "retrieved_documents": [doc.to_dict() for doc in self.retrieved_documents],
-            "draft": self.draft.to_dict(),
-            "check": self.check.to_dict(),
-            "timestamp": self.timestamp,
-            "model_used": self.model_used,
+            "recommendations": [rec.to_dict() for rec in self.recommendations],
+            "overall_confidence": self.overall_confidence,
+            "guardrail_flags": list(self.guardrail_flags),
+            "plan_steps": [step.to_dict() for step in self.plan_steps],
+            "self_check": dict(self.self_check),
         }
