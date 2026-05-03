@@ -14,6 +14,7 @@ from src.recommender import load_songs, unique_labels
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 
 
 @st.cache_data
@@ -37,26 +38,10 @@ def main() -> None:
     songs = load_catalog()
     genres = ["Auto"] + unique_labels(songs, "genre")
     moods = ["Auto"] + unique_labels(songs, "mood")
+    env_key = os.getenv("OPENAI_API_KEY", "")
 
     with st.sidebar:
         st.header("Controls")
-        st.subheader("External LLM")
-        env_key = os.getenv("OPENAI_API_KEY", "")
-        api_key = st.text_input(
-            "OpenAI API key",
-            value="",
-            type="password",
-            help="Optional. If provided, the app uses OpenAI for profile refinement and grounded explanations.",
-        )
-        if not api_key and env_key:
-            api_key = env_key
-            st.success("Using OPENAI_API_KEY from environment.")
-        model = st.text_input("OpenAI model", value=os.getenv("OPENAI_MODEL", "gpt-5-mini"))
-        use_llm = st.checkbox("Use external LLM", value=bool(api_key))
-        if use_llm and not api_key:
-            st.warning("Add an API key to use the LLM path. The app will fall back locally.")
-        st.divider()
-        st.subheader("Recommendation Controls")
         count = st.slider("Recommendations", min_value=3, max_value=8, value=5)
         diversity = st.slider("Diversity", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
         selected_genre = st.selectbox("Genre override", genres)
@@ -70,18 +55,45 @@ def main() -> None:
     left, right = st.columns([0.45, 0.55])
     with left:
         st.subheader("Request")
+        st.markdown("**External LLM Settings**")
+        api_key = st.text_input(
+            "OpenAI API key",
+            value="",
+            type="password",
+            help="Optional. If provided, the app uses OpenAI for profile refinement and grounded explanations.",
+        )
+        if not api_key and env_key:
+            api_key = env_key
+            st.success("Using OPENAI_API_KEY from environment.")
+        model = st.text_input(
+            "OpenAI model",
+            value=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+        )
+        use_llm = st.checkbox("Use external LLM", value=bool(api_key))
+        if use_llm and not api_key:
+            st.warning("Add an API key to use the LLM path. The app will fall back locally.")
+
         sections = ["Write my own"] + samples["section"].drop_duplicates().tolist()
-        selected_section = st.selectbox("Example group", sections)
+        selected_section = st.selectbox("Example group", sections, key="example_group")
         sample_query = ""
         if selected_section != "Write my own":
             section_samples = samples[samples["section"] == selected_section]
-            label = st.selectbox("Example", section_samples["label"].tolist())
-            sample_query = str(section_samples.loc[section_samples["label"] == label].iloc[0]["query"])
+            labels = section_samples["label"].tolist()
+            if labels:
+                label = st.selectbox("Example", labels, key=f"example_label_{selected_section}")
+                matching_samples = section_samples[section_samples["label"] == label]
+                if matching_samples.empty:
+                    sample_query = str(section_samples.iloc[0]["query"])
+                else:
+                    sample_query = str(matching_samples.iloc[0]["query"])
+            else:
+                st.info("No examples are available in this group.")
 
         query = st.text_area(
             "Music request",
             value=sample_query,
             height=170,
+            key=f"query_{selected_section}_{sample_query[:32]}",
             placeholder="Example: I need calm focus music for coding tonight.",
         )
         submitted = st.button("Recommend", type="primary")

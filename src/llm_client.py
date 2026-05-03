@@ -12,7 +12,7 @@ class LLMClientError(RuntimeError):
 
 
 class OpenAILLMClient:
-    def __init__(self, api_key: str, model: str = "gpt-5-mini"):
+    def __init__(self, api_key: str, model: str = "gpt-5.4-mini"):
         if not api_key:
             raise LLMClientError("OPENAI_API_KEY is required to use the external LLM.")
         try:

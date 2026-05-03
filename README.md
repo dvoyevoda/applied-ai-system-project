@@ -84,7 +84,9 @@ cp .env.example .env
 # edit .env and set OPENAI_API_KEY
 ```
 
-Or paste the key into the Streamlit sidebar. Without a key, the app falls back to the local parser and deterministic explanations so it still runs for graders.
+Or paste the key into the main Streamlit app page. Without a key, the app falls back to the local parser and deterministic explanations so it still runs for graders.
+
+The main app page includes fields for the OpenAI API key and model name. The default model is `gpt-5.4-mini`, and you can change it from the interface before clicking **Recommend**.
 
 Run the Streamlit app:
 

@@ -19,6 +19,7 @@ from .retriever import MusicRetriever
 
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 
 
 class MusicRecommendationAgent:
@@ -29,7 +30,7 @@ class MusicRecommendationAgent:
         log_path: str | Path | None = ROOT / "logs" / "recommendation_runs.jsonl",
         use_llm: bool = False,
         api_key: str | None = None,
-        model: str = "gpt-5-mini",
+        model: str = DEFAULT_OPENAI_MODEL,
         llm_client: Any | None = None,
     ):
         self.song_path = Path(song_path)

@@ -20,7 +20,7 @@ def main() -> None:
     )
     parser.add_argument("-k", "--count", type=int, default=5, help="Number of songs to recommend.")
     parser.add_argument("--use-llm", action="store_true", help="Use OpenAI for profile refinement and explanations.")
-    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-5-mini"), help="OpenAI model name.")
+    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"), help="OpenAI model name.")
     parser.add_argument("--json", action="store_true", help="Print the full structured result as JSON.")
     args = parser.parse_args()
 
