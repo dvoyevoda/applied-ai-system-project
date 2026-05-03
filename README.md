@@ -4,6 +4,10 @@ MoodMap is an upgraded version of my Module 3 project, **Music Recommender Simul
 
 The goal is to make recommendations that are useful and explainable instead of only returning a ranked list. A user can type a natural-language request like "I need calm focus music for coding," and the system parses the request, retrieves relevant music-guidance documents, scores the catalog, reranks for diversity, checks reliability, and explains why each song was chosen.
 
+### Loom Demo
+
+https://www.loom.com/share/b362d6f60f664d94b2c441fa37bedf38
+
 ## What Changed From the Original Project
 
 Original Module 3 scope:
